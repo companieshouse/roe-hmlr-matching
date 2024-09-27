@@ -1,0 +1,12 @@
+[project]
+name = "roe-hmlr-matching"
+version = "0.1.0"
+description = "This package takes land registry data and compares it with the ROE data from CHIPs"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "cleanco>=2.3",
+    "cx-oracle>=8.3.0",
+    "pandas>=2.2.3",
+    "sqlalchemy>=2.0.35",
+]
