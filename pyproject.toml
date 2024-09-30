@@ -5,6 +5,7 @@ description = "This package takes land registry data and compares it with the RO
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "openpyxl>=3.1.5,
     "cleanco>=2.3",
     "cx-oracle>=8.3.0",
     "pandas>=2.2.3",
