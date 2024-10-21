@@ -7,33 +7,40 @@ Original script called helpers written by Omolara Ajayi and James Gough
 Created on Tue Sep  3 10:00:29 2024
 @author: wburkett
 """
+
+
 # %%
-import os
 import json
+import os
+import re
+from datetime import datetime
+from pathlib import Path
+
 import cx_Oracle
 import pandas as pd
-import re
 from cleanco.clean import basename
 from sqlalchemy import create_engine
-from datetime import datetime
 
 
-def get_roe_data(config_file_path: str) -> pd.DataFrame:
+def get_roe_data(config_file: Path) -> pd.DataFrame:
     """
     Connects to the oracle database and returns the ROE data
     """
-    if not os.path.exists(config_file_path):
-        raise FileNotFoundError(f"Config file {config_file_path} not found.")
+    if not os.path.exists(config_file):
+        raise FileNotFoundError(f"Config file {config_file} not found.")
 
-    with open(config_file_path, "r") as f:
+    with open(config_file, "r") as f:
         config = json.load(f)
 
     dsn_tns = cx_Oracle.makedsn(config["host"], config["port"], config["sid"])
     conn = f'oracle+cx_oracle://{config["user"]}:{config["password"]}@{dsn_tns}'
 
     engine = create_engine(conn, pool_recycle=10, pool_size=50, echo=False)
-    # Runs a query on the CHIPS database to extract the full list of ROE companies on the register
-    # (corporate_body_type_id = 37 is for ROE companies); (action_code_type_id < 9000 is for live companies)
+
+    # Runs a query on the CHIPS database to extract the full list of ROE
+    # companies on the register.
+    # - corporate_body_type_id = 37 is for ROE companies
+    # - action_code_type_id < 9000 is for live companies
     query = """
                 SELECT
                     incorporation_number,
@@ -47,6 +54,7 @@ def get_roe_data(config_file_path: str) -> pd.DataFrame:
                     action_code_type_id < 9000  
                 """
     roe_df = pd.read_sql_query(query, engine)
+    roe_df.columns = roe_df.columns.str.lower()
 
     return roe_df
 
@@ -60,168 +68,236 @@ def clean_company_name(company_name: str):
     company_name = str(company_name).lower()
     company_name = re.sub(r"[^\w\d\s]", "", company_name)
     company_name = basename(company_name)
+    company_name = re.sub(" ", "", company_name)
     company_name = re.sub(
         r"\ss\w\srl$", "", company_name
     )  # This is to remove SRL suffix in particular.
     return company_name
 
 
-def get_roe_cleaned(config_file_path: str) -> pd.DataFrame:
+def get_newest_hmlr_file(folder_path: Path) -> pd.DataFrame:
     """
-    Applies clean_company_name to the corporate_body_name column. Returns a cleaned dataframe of the ROE data queried from the database.
+    Reads the most recent HMLR Excel file from a folder based on the date in the
+    filename.
+
+    The function looks for files following the naming convention
+    'RXN_DD_MMM_YYYY.xlsx'. It ignores any other files and returns the contents
+    of the most recent file as a pandas DataFrame.
     """
-    df = get_roe_data(config_file_path)
-    df["cleaned_company_name"] = (
-        df["corporate_body_name"].astype(str).apply(clean_company_name)
-    )
+    pattern = re.compile(r"RXN_(\d{2})_(\w{3})_(\d{4})\.xlsx")
+    month_map = {
+        month: index
+        for index, month in enumerate(
+            [
+                "JAN",
+                "FEB",
+                "MAR",
+                "APR",
+                "MAY",
+                "JUN",
+                "JUL",
+                "AUG",
+                "SEP",
+                "OCT",
+                "NOV",
+                "DEC",
+            ],
+            start=1,
+        )
+    }
+    folder = Path(folder_path)
+
+    files_with_dates = [
+        (file, datetime(int(year), month_map[month_str.upper()], int(day)))
+        for file in folder.iterdir()
+        if file.is_file() and (match := pattern.match(file.name))
+        for day, month_str, year in [match.groups()]
+    ]
+
+    if not files_with_dates:
+        raise FileNotFoundError(
+            "No valid files found in the folder following the RXN_DD_MMM_YYYY.xlsx naming convention."
+        )
+
+    newest_file = max(files_with_dates, key=lambda x: x[1])[0]
+
+    df = pd.read_excel(newest_file)
+    df.columns = df.columns.str.lower()
     return df
 
 
-def clean_column_names(df):
+def get_newest_exclusion_list(folder_path: Path) -> pd.DataFrame:
     """
-    Replaces
-    """
-    df.columns = [c.replace(" ", "_").replace("?", "") for c in df.columns]
+    Reads the most recent Exclusion Excel file from a folder based on the date in the
+    filename.
 
+    The function looks for files following the naming convention
+    'YYYY-MM-DD-exclusions.xlsx'. It ignores any other files and returns the contents
+    of the most recent file as a pandas DataFrame.
+    """
+    pattern = re.compile(r"(\d{4})-(\d{2})-(\d{2})-exclusions\.xlsx")
 
-def split_alternate_proprietors(df):
-    """
-    Converts a wide list of proprietors into a longer list with each proprietor recorded on their own row.
-    """
-    all_dfs = []
-    for i in range(1, 5):
-        # checks whether PROPRIETOR_NAME_{i} is not blank
-        df_address_2 = df[df[f"PROPRIETOR_NAME_{i}"] != ""]
-        # checks whether PROPRIETOR_NAME_{i} isna
-        df_address_2 = df_address_2[~pd.isna(df_address_2[f"PROPRIETOR_NAME_{i}"])]
-        # TODO: check whether removing this line makes a difference
-        df_address_2 = df_address_2.rename(
-            columns={
-                f"COUNTRY_INCORPORATED_{i}": "COUNTRY_INCORPORATED",
-                f"PROPRIETOR_NAME_{i}": "PROPRIETOR_NAME",
-                f"PROPRIETOR_{i}_ADDRESS_1": "PROPRIETOR_ADDRESS_1",
-                f"PROPRIETOR_{i}_ADDRESS_2": "PROPRIETOR_ADDRESS_2",
-                f"PROPRIETOR_{i}_ADDRESS_3": "PROPRIETOR_ADDRESS_3",
-            }
+    folder = Path(folder_path)
+
+    files_with_dates = [
+        (file, datetime(int(year), int(month), int(day)))
+        for file in folder.iterdir()
+        if file.is_file() and (match := pattern.match(file.name))
+        for year, month, day in [match.groups()]
+    ]
+
+    if not files_with_dates:
+        raise FileNotFoundError(
+            "No valid files found in the folder following the YYYY-MM-DD-exclusions.xlsx naming convention."
         )
 
-        df_address_2 = df_address_2[
+    newest_file = max(files_with_dates, key=lambda x: x[1])[0]
+
+    df = pd.read_excel(newest_file)
+    df.columns = df.columns.str.lower()
+    return df
+
+
+def reshape_hmlr_proprietors(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Reshapes the HMLR data into a long format.
+
+    In the original file, multiple proprietors are stored per row, so this
+    function splits those proprietors so each has its own row.
+    """
+
+    NUM_PROPRIETORS = 4
+    df_melted = pd.DataFrame()
+
+    for i in range(1, NUM_PROPRIETORS + 1):
+
+        temp_df = df[
             [
-                "TITLE_NUMBER",
-                "TENURE",
-                "DATE_PROPERTY_WAS_PURCHASED",
-                "COUNTRY_INCORPORATED",
-                "PROPRIETOR_NAME",
-                "PROPRIETOR_ADDRESS_1",
-                "PROPRIETOR_ADDRESS_2",
-                "PROPRIETOR_ADDRESS_3",
+                "title_number",
+                "tenure",
+                "property_address",
+                "district",
+                "county",
+                "region",
+                "price_paid",
+                f"proprietor_name_{i}",
+                f"proprietor_{i}_address_1",
+                f"proprietor_{i}_address_2",
+                f"proprietor_{i}_address_3",
+                "date_proprieter_added_updated",
+                "extract_date",
             ]
+        ].copy()
+
+        temp_df.columns = [
+            "title_number",
+            "tenure",
+            "property_address",
+            "district",
+            "county",
+            "region",
+            "price_paid",
+            "proprietor_name",
+            "proprietor_address_1",
+            "proprietor_address_2",
+            "proprietor_address_3",
+            "date_proprieter_added_updated",
+            "extract_date",
         ]
-        all_dfs.append(df_address_2)
-    return pd.concat(all_dfs, ignore_index=True)
 
+        df_melted = pd.concat([df_melted, temp_df], ignore_index=True)
 
-# References OneDrive locations
-def import_spreadsheets(path: str) -> pd.DataFrame:
-    files = os.listdir(path)
-    paths = [os.path.join(path, file) for file in files]
-    latest_file = max(paths, key=os.path.getctime)
-    latest_hmlr_df = pd.read_excel(latest_file)
-    clean_column_names(latest_hmlr_df)
-    return latest_hmlr_df
+    # Remove rows where proprietor_name is blank or NaN
+    df_melted = df_melted.dropna(subset=["proprietor_name"])
 
-
-def get_hmlr_data(file_path: str, dedupe: bool = True) -> pd.DataFrame:
-    """
-    Returns a dataframe with the deduplicated proprietor name and address
-    """
-    base_df = import_spreadsheets(file_path)
-    base_df = split_alternate_proprietors(base_df)
-    base_df["cleaned_proprietor_name"] = (
-        base_df["PROPRIETOR_NAME"].astype(str).apply(clean_company_name)
-    )
-    base_df["cleaned_proprietor_address"] = (
-        base_df["PROPRIETOR_ADDRESS_1"].astype(str).apply(clean_company_name)
-    )
-
-    if dedupe:
-        df_final = base_df.drop_duplicates(
-            subset=["cleaned_proprietor_name", "cleaned_proprietor_address"],
-            keep="first",
-        )
-
-    else:
-        df_final = base_df
-
-    return df_final
+    return df_melted
 
 
 # %%
-def full_hmlr_roe_processing_pipeline():
+def main():
     """
-    This function combines the functions above to run the entire pipeline. All that is needed is the hmlr file's path
-    location and a SQLAlchemy database connection object to retrieve the data. (see
-    data_engineering.db_connection.db_connect.py for how to
-    establish a DB connection securely).
-    Two files with the unmatched HMLR and ROE companies will be output in the files subfolder of this script.
+    This function combines the functions above to run the entire pipeline.
+    Two files with the unmatched HMLR and ROE companies will be output in the
+    files subfolder of this script.
     """
 
-    # Getting data as a dictionary with the company name processed for both our ROE data and the HMLR dataset.
-    hmlr_df = get_hmlr_data("./inputs", dedupe=True)
-    roe_df = get_roe_cleaned("config.json")
+    # Get data -----------------------------------------------------------------
 
-    # hmlr_df_distinct_proprietors = hmlr_df.drop_duplicates(
-    #     subset=["cleaned_proprietor_name"],
-    #     keep="first",
-    # )
-
-    # Save the unmatched HMLR holdings
-    hmlr_unmatched_in_roe_df = hmlr_df[
-        ~hmlr_df["cleaned_proprietor_name"].isin(roe_df["cleaned_company_name"])
-    ]
-    hmlr_unmatched_in_roe_df = hmlr_unmatched_in_roe_df.sort_values(
-        by=["cleaned_proprietor_name"]
+    hmlr_df = get_newest_hmlr_file(folder_path="inputs/hmlr-data")
+    hmlr_df = reshape_hmlr_proprietors(hmlr_df)
+    hmlr_df["clean_proprietor_name"] = (
+        hmlr_df["proprietor_name"].astype(str).apply(clean_company_name)
     )
+
+    roe_df = get_roe_data(config_file="config.json")
+    roe_df["clean_company_name"] = (
+        roe_df["corporate_body_name"].astype(str).apply(clean_company_name)
+    )
+
+    exclusions_df = get_newest_exclusion_list(folder_path="inputs")
+    exclusions_df["clean_entity_name"] = (
+        exclusions_df["entity name (from hmlr datasets)"].astype(str).apply(clean_company_name)
+    )
+
+    roe_df["excluded_bool"] = roe_df["clean_company_name"].isin(
+        exclusions_df["clean_entity_name"]
+    )
+
+    hmlr_df["excluded_bool"] = hmlr_df["clean_proprietor_name"].isin(
+        exclusions_df["clean_entity_name"]
+    )
+
+    # Stores the date today in a YYYY-MM-DD format variable for use when saving the unmatched dataframes
+
     date_today = datetime.today().strftime("%Y-%m-%d")
+
+    # Save the unmatched HMLR holdings -----------------------------------------
+
+    hmlr_unmatched_in_roe_df = hmlr_df[
+        ~hmlr_df["clean_proprietor_name"].isin(roe_df["clean_company_name"]) & ~hmlr_df["excluded_bool"]
+    ].sort_values(by=["clean_proprietor_name"]).drop("excluded_bool", axis=1)
+
     hmlr_unmatched_in_roe_df.to_excel(
         f"./outputs/{date_today}-HMLR-unmatched.xlsx", index=False
     )
 
-    # Save the unmatched ROE Companies
+    # Save the unmatched ROE entities ------------------------------------------
+
     roe_unmatched_in_hmlr_df = roe_df[
-        ~roe_df["cleaned_company_name"].isin(hmlr_df["cleaned_proprietor_name"])
-    ]
-    roe_unmatched_in_hmlr_df = roe_unmatched_in_hmlr_df.sort_values(
-        by=["cleaned_company_name"]
-    )
-    date_today = datetime.today().strftime("%Y-%m-%d")
+        ~roe_df["clean_company_name"].isin(hmlr_df["clean_proprietor_name"]) & ~roe_df["excluded_bool"]
+    ].sort_values(by=["clean_company_name"]).drop("excluded_bool", axis=1)
+
     roe_unmatched_in_hmlr_df.to_excel(
         f"./outputs/{date_today}-ROE-unmatched.xlsx", index=False
     )
 
     hmlr_df_unique_proprietors = hmlr_df.drop_duplicates(
-        subset=["cleaned_proprietor_name"],
+        subset=["clean_proprietor_name"],
         keep="first",
     )
 
-    # Transforming to a set to get a count of the _unique_ company names in the HMLR dataset.
-    hmlr_unique_proprietors_count = len(
-        hmlr_df_unique_proprietors["cleaned_proprietor_name"]
-    )
+    # Statistics ---------------------------------------------------------------
 
-    # Getting the count for how many unique hmlr companies we have in ans not in our ROE database.
-    hmlr_unmatched_roe_count = len(
-        hmlr_unmatched_in_roe_df["cleaned_proprietor_name"].unique()
+    # Transforming to a set to get a count of the unique company names in the
+    # HMLR dataset.
+    hmlr_unique_proprietors_count = len(
+        hmlr_df_unique_proprietors["clean_proprietor_name"]
     )
-    hmlr_matched_roe_count = hmlr_unique_proprietors_count - hmlr_unmatched_roe_count
+    hmlr_excluded_proprietors_count = sum(
+        hmlr_df_unique_proprietors["excluded_bool"]
+    )
+    # Getting the count for how many unique hmlr companies we have in ans not in
+    # our ROE database.
+    hmlr_unmatched_roe_count = len(
+        hmlr_unmatched_in_roe_df["clean_proprietor_name"].unique()
+    )
+    hmlr_matched_roe_count = hmlr_unique_proprietors_count - hmlr_unmatched_roe_count - hmlr_excluded_proprietors_count
 
     # Getting the percentage of HMLR companies that we have in the database.
     matched_roe_percentage = (
         hmlr_matched_roe_count / (hmlr_unique_proprietors_count) * 100
     )
 
-    # Formatting these stats into easily digestible sentences.
-    # =============================================================================
     print(
         f"The number of unique hmlr proprietors on the list is: {hmlr_unique_proprietors_count}."
     )
@@ -229,14 +305,21 @@ def full_hmlr_roe_processing_pipeline():
         f"The number of hmlr proprietors matched in ROE is: {hmlr_matched_roe_count}."
     )
     print(
-        f"The number of hmlr proprietors not matched in ROE is: {hmlr_unmatched_roe_count}."
+        f"The number of hmlr proprietors excluded is: {hmlr_excluded_proprietors_count}"
     )
+    print(
+        f"The number of hmlr proprietors not matched or excluded in ROE is: {hmlr_unmatched_roe_count}."
+    )
+
     print(
         f"The proportion of proprietors on the ROE register is: {matched_roe_percentage:.2f}%."
     )
-    print(f"The number of overseas entities on the ROE register is: {len(roe_df)}")
-    # =============================================================================
+    print(
+        f"The number of overseas entities on the ROE register is: {len(roe_df)}"
+    )
 
 
-# Runs the functions above to produce the output
-full_hmlr_roe_processing_pipeline()
+if __name__ == "__main__":
+    main()
+
+# %%
