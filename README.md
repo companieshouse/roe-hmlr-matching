@@ -3,7 +3,7 @@ In order to be able to run this script you need to set up the the correct folder
 The pyproject.toml and roe-hmlr-matching.py will be place in the effective root folder and you will need to create inputs and outputs subfolders within the root folder. You will also need to create a config.json file to store your login details in order to access the database and extract the ROE data from CHIPS.
 
 The schema for the config file is shown below
-
+```json
 {
     "host": "host-name",
     "port": 0000,
@@ -11,7 +11,7 @@ The schema for the config file is shown below
     "user": "user-name",
     "password": "password"
 }
-
+```
 In the inputs folder you will create 2 sub-folders called hmlr-data and exclusions. 
 
 In the hmlr-data folder you will need to save the HMLR extract(s) to be used in the script. The naming convention for the files is RXN_DD_MMM_YYYY.xlsx, if they are not in this format the script will ignore the files when searching for the latest HMLR extract.
