@@ -2,7 +2,7 @@
 """
 Rework of HMLR Script to use monthly Land Registry Extracts
 
-Original script called helpers written by Omolara Ajayi and James Gough
+Based on a script called helpers written by Omolara Ajayi and James Gough
 
 Created on Tue Sep  3 10:00:29 2024
 @author: wburkett
@@ -15,7 +15,7 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
-
+from unidecode import unidecode
 import cx_Oracle
 import pandas as pd
 from cleanco.clean import basename
@@ -66,8 +66,35 @@ def clean_company_name(company_name: str):
     :param company_name:
     """
     company_name = str(company_name).lower()
+    # this corrects some common variances that have been found to cause missed matches
+    company_name = re.sub("&", "and", company_name)
+    company_name = re.sub("street", "st", company_name)
+    company_name = re.sub("invesment", "investment", company_name)
+    company_name = re.sub("investments", "investment", company_name)
+    # this converts accented characters to the closest equivalent letter
+    company_name = unidecode(company_name)
     company_name = re.sub(r"[^\w\d\s]", "", company_name)
     company_name = basename(company_name)
+    # this is a list of suffixes that have been found that are not
+    # correctly removed using the basename function in cleanco
+    suffix = [
+        "sa rl",
+        "pty",
+        "holdings",
+        "holding",
+        "s a",
+        "limitada",
+        "cy",
+        "sb",
+        "dac",
+        "public",
+        "sdnbhd",
+        "coltd",
+        "designated activity",
+        "properties",
+    ]
+    for word in suffix:
+        company_name = re.sub(rf"\b{word}\b", "", company_name)
     company_name = re.sub(" ", "", company_name)
     company_name = re.sub(
         r"\ss\w\srl$", "", company_name
@@ -234,15 +261,19 @@ def main():
         roe_df["corporate_body_name"].astype(str).apply(clean_company_name)
     )
 
-    exclusions_df = get_newest_exclusion_list(folder_path="inputs")
+    exclusions_df = get_newest_exclusion_list(folder_path="inputs/exclusions")
     exclusions_df["clean_entity_name"] = (
-        exclusions_df["entity name (from hmlr datasets)"].astype(str).apply(clean_company_name)
+        exclusions_df["entity name (from hmlr datasets)"]
+        .astype(str)
+        .apply(clean_company_name)
     )
 
+    # checks whether company is found on the exclusion list and adds a TRUE/FALSE boolean column
     roe_df["excluded_bool"] = roe_df["clean_company_name"].isin(
         exclusions_df["clean_entity_name"]
     )
 
+    # checks whether proprietor is found on the exclusion list and adds a TRUE/FALSE boolean column
     hmlr_df["excluded_bool"] = hmlr_df["clean_proprietor_name"].isin(
         exclusions_df["clean_entity_name"]
     )
@@ -253,9 +284,14 @@ def main():
 
     # Save the unmatched HMLR holdings -----------------------------------------
 
-    hmlr_unmatched_in_roe_df = hmlr_df[
-        ~hmlr_df["clean_proprietor_name"].isin(roe_df["clean_company_name"]) & ~hmlr_df["excluded_bool"]
-    ].sort_values(by=["clean_proprietor_name"]).drop("excluded_bool", axis=1)
+    hmlr_unmatched_in_roe_df = (
+        hmlr_df[
+            ~hmlr_df["clean_proprietor_name"].isin(roe_df["clean_company_name"])
+            & ~hmlr_df["excluded_bool"]
+        ]
+        .sort_values(by=["clean_proprietor_name"])
+        .drop("excluded_bool", axis=1)
+    )
 
     hmlr_unmatched_in_roe_df.to_excel(
         f"./outputs/{date_today}-HMLR-unmatched.xlsx", index=False
@@ -263,9 +299,14 @@ def main():
 
     # Save the unmatched ROE entities ------------------------------------------
 
-    roe_unmatched_in_hmlr_df = roe_df[
-        ~roe_df["clean_company_name"].isin(hmlr_df["clean_proprietor_name"]) & ~roe_df["excluded_bool"]
-    ].sort_values(by=["clean_company_name"]).drop("excluded_bool", axis=1)
+    roe_unmatched_in_hmlr_df = (
+        roe_df[
+            ~roe_df["clean_company_name"].isin(hmlr_df["clean_proprietor_name"])
+            & ~roe_df["excluded_bool"]
+        ]
+        .sort_values(by=["clean_company_name"])
+        .drop("excluded_bool", axis=1)
+    )
 
     roe_unmatched_in_hmlr_df.to_excel(
         f"./outputs/{date_today}-ROE-unmatched.xlsx", index=False
@@ -283,15 +324,17 @@ def main():
     hmlr_unique_proprietors_count = len(
         hmlr_df_unique_proprietors["clean_proprietor_name"]
     )
-    hmlr_excluded_proprietors_count = sum(
-        hmlr_df_unique_proprietors["excluded_bool"]
-    )
+    hmlr_excluded_proprietors_count = sum(hmlr_df_unique_proprietors["excluded_bool"])
     # Getting the count for how many unique hmlr companies we have in ans not in
     # our ROE database.
     hmlr_unmatched_roe_count = len(
         hmlr_unmatched_in_roe_df["clean_proprietor_name"].unique()
     )
-    hmlr_matched_roe_count = hmlr_unique_proprietors_count - hmlr_unmatched_roe_count - hmlr_excluded_proprietors_count
+    hmlr_matched_roe_count = (
+        hmlr_unique_proprietors_count
+        - hmlr_unmatched_roe_count
+        - hmlr_excluded_proprietors_count
+    )
 
     # Getting the percentage of HMLR companies that we have in the database.
     matched_roe_percentage = (
@@ -310,13 +353,10 @@ def main():
     print(
         f"The number of hmlr proprietors not matched or excluded in ROE is: {hmlr_unmatched_roe_count}."
     )
-
     print(
         f"The proportion of proprietors on the ROE register is: {matched_roe_percentage:.2f}%."
     )
-    print(
-        f"The number of overseas entities on the ROE register is: {len(roe_df)}"
-    )
+    print(f"The number of overseas entities on the ROE register is: {len(roe_df)}")
 
 
 if __name__ == "__main__":
