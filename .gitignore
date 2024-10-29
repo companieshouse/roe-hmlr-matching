@@ -1,7 +1,6 @@
+#
 config*.json
-inputs/
-outputs/
-misc/
+/misc/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
