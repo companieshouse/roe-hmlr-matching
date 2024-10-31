@@ -18,7 +18,7 @@ In the hmlr-data folder you will need to save the HMLR extract(s) to be used in 
 
 In the exclusions sub-folder you will need to save the exclusions list(s) to be used by the script. The naming convention for the files is YYYY-MM-DD-exclusions.xlsx, if they are not in this format the script will ignore the files when searching for the latest exclusions list.
 
-The 2 unmatched lists will be saved into the outputs folders in the format YYYY-MM-DD-ROE-unmatched.xlsx and YYYY-MM-DD-HMLR-unmatched.xlsx and will each contain a list of the unmatched entities from either the ROE or HMLR datasets.
+The 2 unmatched lists will be saved into the outputs folders in the format YYYY-MM-DD-ROE-unmatched.xlsx and YYYY-MM-DD-HMLR-unmatched.xlsx and will each contain a list of the unmatched entities from either the ROE or HMLR datasets. The script will also add 2 columns which shows the closest match in either the ROE or HMLR datasets and the accuracy ratio so that we can identify those that have been misspelt or worded slightly differently.
 
 The project.toml file contains a list of the dependencies used by the script and these will need to be installed in the virtual environment in order to run the script.
 
