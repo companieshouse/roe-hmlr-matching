@@ -20,6 +20,8 @@ import cx_Oracle
 import pandas as pd
 from cleanco.clean import basename
 from sqlalchemy import create_engine
+import rapidfuzz
+from rapidfuzz import process
 
 
 def get_roe_data(config_file: Path) -> pd.DataFrame:
@@ -79,7 +81,7 @@ def clean_company_name(company_name: str):
     # correctly removed using the basename function in cleanco
     suffix = [
         "sa rl",
-        "pty",
+        "s a r l" "pty",
         "holdings",
         "holding",
         "s a",
@@ -92,6 +94,10 @@ def clean_company_name(company_name: str):
         "coltd",
         "designated activity",
         "properties",
+        "lp",
+        "pteltd",
+        "b v",
+        "s s",
     ]
     for word in suffix:
         company_name = re.sub(rf"\b{word}\b", "", company_name)
@@ -282,7 +288,7 @@ def main():
 
     date_today = datetime.today().strftime("%Y-%m-%d")
 
-    # Save the unmatched HMLR holdings -----------------------------------------
+    # Creates the unmatched HMLR holdings -----------------------------------------
 
     hmlr_unmatched_in_roe_df = (
         hmlr_df[
@@ -293,11 +299,35 @@ def main():
         .drop("excluded_bool", axis=1)
     )
 
+    # Finds the closest match in the ROE dataframe
+
+    hmlr_unmatched_in_roe_df[
+        ["closest_match_in_roe", "accuracy_ratio", "index"]
+    ] = hmlr_unmatched_in_roe_df["clean_proprietor_name"].apply(
+        lambda x: pd.Series(
+            process.extractOne(
+                x, roe_df["clean_company_name"], scorer=rapidfuzz.fuzz.ratio
+            )
+        )
+    )
+
+    hmlr_unmatched_in_roe_df = hmlr_unmatched_in_roe_df.sort_values(
+        by=["accuracy_ratio"], ascending=False
+    ).drop("index", axis=1)
+    # Saves the unmatched holdings
+
     hmlr_unmatched_in_roe_df.to_excel(
         f"./outputs/{date_today}-HMLR-unmatched.xlsx", index=False
     )
 
-    # Save the unmatched ROE entities ------------------------------------------
+    # Creates a list of unique hmlr proprietors
+
+    hmlr_df_unique_proprietors = hmlr_df.drop_duplicates(
+        subset=["clean_proprietor_name"],
+        keep="first",
+    )
+
+    # Creates the unmatched ROE entities ------------------------------------------
 
     roe_unmatched_in_hmlr_df = (
         roe_df[
@@ -308,13 +338,23 @@ def main():
         .drop("excluded_bool", axis=1)
     )
 
-    roe_unmatched_in_hmlr_df.to_excel(
-        f"./outputs/{date_today}-ROE-unmatched.xlsx", index=False
+    roe_unmatched_in_hmlr_df[
+        ["closest_match_in_hmlr", "accuracy_ratio", "index"]
+    ] = roe_unmatched_in_hmlr_df["clean_company_name"].apply(
+        lambda x: pd.Series(
+            process.extractOne(
+                x,
+                hmlr_df_unique_proprietors["clean_proprietor_name"],
+                scorer=rapidfuzz.fuzz.ratio,
+            )
+        )
     )
 
-    hmlr_df_unique_proprietors = hmlr_df.drop_duplicates(
-        subset=["clean_proprietor_name"],
-        keep="first",
+    roe_unmatched_in_hmlr_df = roe_unmatched_in_hmlr_df.sort_values(
+        by=["accuracy_ratio"], ascending=False
+    ).drop("index", axis=1)
+    roe_unmatched_in_hmlr_df.to_excel(
+        f"./outputs/{date_today}-ROE-unmatched.xlsx", index=False
     )
 
     # Statistics ---------------------------------------------------------------
