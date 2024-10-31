@@ -81,7 +81,8 @@ def clean_company_name(company_name: str):
     # correctly removed using the basename function in cleanco
     suffix = [
         "sa rl",
-        "s a r l" "pty",
+        "s a r l",
+        "pty",
         "holdings",
         "holding",
         "s a",
