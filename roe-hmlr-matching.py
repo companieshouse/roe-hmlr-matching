@@ -69,6 +69,7 @@ def clean_company_name(company_name: str):
     """
     company_name = str(company_name).lower()
     # this corrects some common variances that have been found to cause missed matches
+    # if the script need to adjust more it could be an option to include these in a txt that is imported instead
     company_name = re.sub("&", "and", company_name)
     company_name = re.sub("street", "st", company_name)
     company_name = re.sub("invesment", "investment", company_name)
@@ -79,6 +80,7 @@ def clean_company_name(company_name: str):
     company_name = basename(company_name)
     # this is a list of suffixes that have been found that are not
     # correctly removed using the basename function in cleanco
+    # similar to the adjustments above we could potentially add these to a txt file to allow others to update external to the script
     suffix = [
         "sa rl",
         "s a r l",
@@ -194,10 +196,11 @@ def get_newest_exclusion_list(folder_path: Path) -> pd.DataFrame:
 
 def reshape_hmlr_proprietors(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Reshapes the HMLR data into a long format.
+    Reshapes the HMLR data from a wide format into a long format (each proprietor has their own row).
 
-    In the original file, multiple proprietors are stored per row, so this
-    function splits those proprietors so each has its own row.
+    In the original file, up to 5 proprietors are stored per row, so this
+    function splits those proprietors so each has its own row containing
+    their name and address against the associated title_number and property.
     """
 
     NUM_PROPRIETORS = 4
@@ -252,7 +255,7 @@ def main():
     """
     This function combines the functions above to run the entire pipeline.
     Two files with the unmatched HMLR and ROE companies will be output in the
-    files subfolder of this script.
+    outputs subfolder of this script.
     """
 
     # Get data -----------------------------------------------------------------
@@ -286,11 +289,11 @@ def main():
     )
 
     # Stores the date today in a YYYY-MM-DD format variable for use when saving the unmatched dataframes
-
     date_today = datetime.today().strftime("%Y-%m-%d")
 
     # Creates the unmatched HMLR holdings -----------------------------------------
-
+    # This compares the HMLR dataset against the ROE dataset and
+    # returns a dataframe of the HMLR proprietors that do not have a match
     hmlr_unmatched_in_roe_df = (
         hmlr_df[
             ~hmlr_df["clean_proprietor_name"].isin(roe_df["clean_company_name"])
@@ -300,8 +303,10 @@ def main():
         .drop("excluded_bool", axis=1)
     )
 
-    # Finds the closest match in the ROE dataframe
-
+    # Finds the closest match in the ROE dataframe and adds 3 columns
+    # closest_match_in_roe stores the clean_company_name that is the closest match
+    # accuracy_ratio is the ratio of how close a match is to the HMLR clean_proprietor_name
+    # index is the index of the row the match was found (this is dropped immediately after)
     hmlr_unmatched_in_roe_df[
         ["closest_match_in_roe", "accuracy_ratio", "index"]
     ] = hmlr_unmatched_in_roe_df["clean_proprietor_name"].apply(
@@ -312,24 +317,25 @@ def main():
         )
     )
 
+    # sorts the dataframe by the accuracy_ratio of the match and drops the index column
     hmlr_unmatched_in_roe_df = hmlr_unmatched_in_roe_df.sort_values(
         by=["accuracy_ratio"], ascending=False
     ).drop("index", axis=1)
-    # Saves the unmatched holdings
 
+    # Saves the unmatched holdings
     hmlr_unmatched_in_roe_df.to_excel(
         f"./outputs/{date_today}-HMLR-unmatched.xlsx", index=False
     )
 
     # Creates a list of unique hmlr proprietors
-
     hmlr_df_unique_proprietors = hmlr_df.drop_duplicates(
         subset=["clean_proprietor_name"],
         keep="first",
     )
 
     # Creates the unmatched ROE entities ------------------------------------------
-
+    # This compares the ROE dataset against the HMLR dataset and
+    # returns a dataframe of the ROE entities that do not have a match
     roe_unmatched_in_hmlr_df = (
         roe_df[
             ~roe_df["clean_company_name"].isin(hmlr_df["clean_proprietor_name"])
@@ -339,6 +345,10 @@ def main():
         .drop("excluded_bool", axis=1)
     )
 
+    # Finds the closest match in the HMLR dataframe and adds 3 columns
+    # closest_match_in_hmlr stores the clean_proprietor_name that is the closest match
+    # accuracy_ratio is the ratio of how close a match is to the ROE clean_company_name
+    # index is the index of the row the match was found (this is dropped immediately after)
     roe_unmatched_in_hmlr_df[
         ["closest_match_in_hmlr", "accuracy_ratio", "index"]
     ] = roe_unmatched_in_hmlr_df["clean_company_name"].apply(
@@ -351,9 +361,12 @@ def main():
         )
     )
 
+    # sorts the dataframe by the accuracy_ratio of the match and drops the index column
     roe_unmatched_in_hmlr_df = roe_unmatched_in_hmlr_df.sort_values(
         by=["accuracy_ratio"], ascending=False
     ).drop("index", axis=1)
+
+    # Saves the unmatched holdings
     roe_unmatched_in_hmlr_df.to_excel(
         f"./outputs/{date_today}-ROE-unmatched.xlsx", index=False
     )
