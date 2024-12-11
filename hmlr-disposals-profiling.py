@@ -34,6 +34,7 @@ def clean_datetime(datetime: str):
     )  # this line removes the timestamp
 
     # the following line removes the timestamp when there is no additional :
+    # as some timestamps immediately follow the date without a space
     datetime = re.sub("\d{2}:\d{2}:\d{2}", "", datetime)
     # this function converts the datetime into formats that are recognised by the "mixed" format used later
     return datetime
