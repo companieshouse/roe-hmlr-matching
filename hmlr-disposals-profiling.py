@@ -4,7 +4,6 @@ Script to compile a list of unique proprietors from the available HMLR extracts.
 Using the list of unique proprietors the script will identify the first and last 
 extracts that the proprietor was found in 
 
-Created on Tue Sep  3 10:00:29 2024
 @author: wburkett
 """
 

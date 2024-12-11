@@ -397,22 +397,38 @@ def main():
         hmlr_matched_roe_count / (hmlr_unique_proprietors_count) * 100
     )
 
-    print(
-        f"The number of unique hmlr proprietors on the list is: {hmlr_unique_proprietors_count}."
-    )
-    print(
-        f"The number of hmlr proprietors matched in ROE is: {hmlr_matched_roe_count}."
-    )
-    print(
-        f"The number of hmlr proprietors excluded is: {hmlr_excluded_proprietors_count}"
-    )
-    print(
-        f"The number of hmlr proprietors not matched or excluded in ROE is: {hmlr_unmatched_roe_count}."
-    )
-    print(
-        f"The proportion of proprietors on the ROE register is: {matched_roe_percentage:.2f}%."
-    )
-    print(f"The number of overseas entities on the ROE register is: {len(roe_df)}")
+    # writes the statistics to a txt file
+    with open(f"./outputs/{date_today}-ROE-HMLR-Statistics.txt", "w") as txt_file:
+        print(
+            f"The number of unique hmlr proprietors on the list is: {hmlr_unique_proprietors_count}.",
+            file=txt_file,
+            end="\n",
+        )
+        print(
+            f"The number of hmlr proprietors matched in ROE is: {hmlr_matched_roe_count}.",
+            file=txt_file,
+            end="\n",
+        )
+        print(
+            f"The number of hmlr proprietors excluded is: {hmlr_excluded_proprietors_count}",
+            file=txt_file,
+            end="\n",
+        )
+        print(
+            f"The number of hmlr proprietors not matched or excluded in ROE is: {hmlr_unmatched_roe_count}.",
+            file=txt_file,
+            end="\n",
+        )
+        print(
+            f"The proportion of proprietors on the ROE register is: {matched_roe_percentage:.2f}%.",
+            file=txt_file,
+            end="\n",
+        )
+        print(
+            f"The number of overseas entities on the ROE register is: {len(roe_df)}",
+            file=txt_file,
+            end="\n",
+        )
 
 
 if __name__ == "__main__":
