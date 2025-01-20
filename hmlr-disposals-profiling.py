@@ -184,6 +184,10 @@ def main():
         first_date_on_hmlr_extract=("extract_date", "min"),
         last_date_on_hmlr_extract=("extract_date", "max"),
     )
+    latest_extract_date = hmlr_proprietor_profile["last_date_on_hmlr_extract"].max()
+    hmlr_proprietor_profile = hmlr_proprietor_profile[
+        hmlr_proprietor_profile["last_date_on_hmlr_extract"] != latest_extract_date
+    ]
 
     # takes todays date to use when saving the output
     date_today = datetime.today().strftime("%Y-%m-%d")
