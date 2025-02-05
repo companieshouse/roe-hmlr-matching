@@ -415,7 +415,7 @@ def main():
             end="\n",
         )
         print(
-            f"The number of hmlr proprietors not matched or excluded in ROE is: {hmlr_unmatched_roe_count}.",
+            f"The number of hmlr proprietors not matched and not excluded in ROE is: {hmlr_unmatched_roe_count}.",
             file=txt_file,
             end="\n",
         )
